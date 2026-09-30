@@ -46,7 +46,24 @@ h1{margin:0 0 .2em;font-size:clamp(34px,10vmin,88px);font-weight:700;letter-spac
 .rot{display:none;margin-top:.8em;font-size:12px;color:var(--gold)}
 body.portrait .rot{display:block}
 .big{font-size:clamp(18px,5vmin,28px);margin:.2em 0 .9em}
-.dead h1{color:#e9c4b4}
+.dead h1{color:#e9c4b4;font-size:clamp(28px,8vmin,64px)}
+.ov{overflow-y:auto}
+.card{max-height:100%}
+.go2{font:inherit;font-size:clamp(13px,3.4vmin,16px);letter-spacing:.2em;padding:.5em 1.6em;margin-top:.9em;background:transparent;
+  color:var(--gold);border:1px solid rgba(217,179,90,.5);border-radius:2px;cursor:pointer}
+.h2{margin:0 0 .3em;font-size:clamp(22px,6vmin,40px);letter-spacing:.12em}
+#ename{font:inherit;font-size:clamp(18px,5vmin,26px);text-align:center;width:min(78vw,300px);padding:.45em .6em;margin:.2em 0 1em;
+  background:rgba(243,233,210,.08);color:var(--ink);border:none;border-bottom:2px solid var(--gold);border-radius:0;outline:none;
+  -webkit-user-select:text;user-select:text}
+#ename::placeholder{color:rgba(243,233,210,.35)}
+.rt{margin:0 auto 1em;border-collapse:collapse;font-size:clamp(12px,3.2vmin,16px)}
+.rt td{padding:.16em .75em;text-align:left;white-space:nowrap}
+.rt td.n{text-align:right;font-variant-numeric:tabular-nums}
+.rt td.w{color:var(--dim)}
+.rt tr:nth-child(-n+3) td:first-child{color:var(--gold)}
+.rt tr.hi td{color:#ffd36a;background:rgba(217,179,90,.16);animation:blink 1.1s steps(2,start) infinite}
+.rt .empty{color:var(--dim);text-align:center}
+@keyframes blink{50%{color:#fff4e4}}
 </style>
 </head>
 <body>
@@ -61,17 +78,38 @@ body.portrait .rot{display:block}
     <div class="how">화면을 누른 채 뒤로 당겨 겨누고, 놓아서 쏘세요.<br>하늘에서는 닭 탄 자객이 날아듭니다. 닭은 두 발을 맞아야 떨어집니다.<br>덩치 큰 대장은 몸통 세 발, 머리 두 발이 필요합니다.<br>자객은 수시로 몸을 낮춰 피하고, 다리는 맞아도 버팁니다.<br>파마다 화살 수가 정해져 있고, 남은 화살은 보너스가 됩니다.</div>
     <button class="go" id="start" type="button">활을 들다</button>
     <div class="best" id="best1"></div>
+    <button class="go2" id="showBoard" type="button">명예의 전당</button>
     <div class="rot">가로로 돌리면 궁궐이 더 넓게 보입니다</div>
   </div></div>
   <div id="over" class="ov hidden dead"><div class="card">
     <h1>베였다</h1>
     <div class="big" id="res"></div>
+    <table class="rt" id="rt2"></table>
+    <div class="best" id="mode2" style="margin:-.6em 0 1em"></div>
     <button class="go" id="again" type="button">다시 활을 들다</button>
     <div class="best" id="best2"></div>
+  </div></div>
+  <div id="entry" class="ov hidden"><div class="card">
+    <div class="seal">名譽</div>
+    <div class="h2">명예의 전당 <span id="erank"></span></div>
+    <div class="big" id="escore"></div>
+    <input id="ename" maxlength="8" placeholder="이름을 새기세요" autocomplete="off" enterkeyhint="done">
+    <div><button class="go" id="esave" type="button">기록하기</button></div>
+  </div></div>
+  <div id="board" class="ov hidden"><div class="card">
+    <div class="h2">명예의 전당</div>
+    <table class="rt" id="rt1"></table>
+    <div class="best" id="mode1" style="margin:-.6em 0 1em"></div>
+    <button class="go" id="bclose" type="button">돌아가기</button>
   </div></div>
 </div>
 <script>
 (()=>{
+/* ===== 지인 공유 순위표 설정 (Firebase Firestore) =====
+   두 값을 채우면 공유 순위표가 켜집니다. 비워두면 이 기기 순위표만 씁니다. */
+const FB_PROJECT='gung-game';   // Firebase 프로젝트 ID
+const FB_KEY='AIzaSyCYUye67DzMUp8kLVgFrJme3MCrbjo3730';       // 웹 API 키
+/* ================================================== */
 const $=id=>document.getElementById(id);
 const wrap=$('wrap'),cvs=$('c'),ctx=cvs.getContext('2d');
 const W=1280,H=720,GROUND=612,PX=150,BS=2;
@@ -94,6 +132,44 @@ addEventListener('resize',resize);
 let best=0;
 try{best=parseInt(localStorage.getItem('gungnight_best')||'0',10)||0}catch(e){}
 function saveBest(){try{localStorage.setItem('gungnight_best',String(best))}catch(e){}}
+function loadRank(){try{const r=JSON.parse(localStorage.getItem('gungnight_rank')||'[]');return Array.isArray(r)?r.filter(x=>x&&typeof x.score==='number').slice(0,10):[];}catch(e){return[];}}
+function saveRank(r){try{localStorage.setItem('gungnight_rank',JSON.stringify(r.slice(0,10)))}catch(e){}}
+function rankPos(sc){if(sc<=0)return -1;const r=loadRank();let i=r.findIndex(x=>sc>x.score);if(i<0)i=r.length;return i<10?i:-1;}
+const ONLINE=!!FB_PROJECT;
+const FSBASE='https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(FB_PROJECT)+'/databases/(default)/documents';
+const KEYQ=FB_KEY?'key='+encodeURIComponent(FB_KEY):'';
+let boardMode='local';
+function withTimeout(p,ms){return Promise.race([p,new Promise((_,rj)=>setTimeout(()=>rj(new Error('timeout')),ms))]);}
+async function fetchOnline(){
+  const res=await withTimeout(fetch(FSBASE+':runQuery'+(KEYQ?'?'+KEYQ:''),{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({structuredQuery:{from:[{collectionId:'scores'}],orderBy:[{field:{fieldPath:'score'},direction:'DESCENDING'}],limit:10}})}),5000);
+  if(!res.ok)throw new Error('http '+res.status);
+  const js=await res.json();
+  return(Array.isArray(js)?js:[]).filter(r=>r&&r.document).map(r=>{const f=r.document.fields||{};
+    return{id:r.document.name.split('/').pop(),name:String((f.name&&f.name.stringValue)||'무명 궁사').slice(0,8),
+      score:parseInt((f.score&&f.score.integerValue)||'0',10)||0,wave:parseInt((f.wave&&f.wave.integerValue)||'1',10)||1};});
+}
+async function postOnline(rec,id){
+  const body={fields:{name:{stringValue:rec.name},score:{integerValue:String(rec.score)},wave:{integerValue:String(rec.wave)},t:{timestampValue:new Date().toISOString()}}};
+  const res=await withTimeout(fetch(FSBASE+'/scores?documentId='+id+(KEYQ?'&'+KEYQ:''),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),6000);
+  if(!res.ok)throw new Error('http '+res.status);
+}
+async function getBoard(){
+  if(ONLINE){try{const l=await fetchOnline();boardMode='online';return l;}catch(e){}}
+  boardMode='local';return loadRank();
+}
+function posIn(list,sc){if(sc<=0)return -1;let i=list.findIndex(x=>sc>x.score);if(i<0)i=list.length;return i<10?i:-1;}
+function modeText(){return boardMode==='online'?'지인들과 함께 쓰는 순위표':(ONLINE?'연결이 안 돼서 이 기기 순위표를 보여드립니다':'이 기기 순위표');}
+function renderTable(el,hi,list){
+  el.textContent='';
+  if(!list){const tr=el.insertRow(),td=tr.insertCell();td.colSpan=4;td.className='empty';td.textContent='순위표 불러오는 중';return;}
+  const r=list;
+  if(!r.length){const tr=el.insertRow(),td=tr.insertCell();td.colSpan=4;td.className='empty';td.textContent='아직 이름을 새긴 궁사가 없습니다';return;}
+  r.forEach((x,i)=>{const tr=el.insertRow();if(i===hi)tr.className='hi';
+    const c=[(i+1)+'위',x.name,x.score.toLocaleString(),'제 '+(x.wave||1)+' 파'],cl=['','','n','w'];
+    c.forEach((v,j)=>{const td=tr.insertCell();td.textContent=v;if(cl[j])td.className=cl[j];});});
+}
+best=Math.max(best,(loadRank()[0]||{score:0}).score);
 
 /* ---------- 소리 (Web Audio 합성) ---------- */
 let AC=null,master=null,NB=null,soundOn=true,vibeOn=true;
@@ -819,11 +895,18 @@ function update(dt,rdt){
   if(state==='clear'){clearT-=rdt;if(clearT<=0)nextWave();}
   if(state==='dead'){
     deadT+=rdt;
-    if(deadT>1.7&&$('over').classList.contains('hidden')){
-      const nb=score>best;if(nb){best=score;saveBest();}
-      $('res').textContent=score.toLocaleString()+'점, 제 '+wave+' 파, 자객 '+kills+'명 격살'+(shots?', 명중률 '+Math.round(Math.min(hits,shots)/shots*100)+'%':'');
-      $('best2').textContent=nb?'새 최고 기록입니다':'최고 기록 '+best.toLocaleString()+'점';
-      $('over').classList.remove('hidden');
+    if(deadT>1.7&&!deadShown){
+      deadShown=true;newBest=score>best;if(newBest){best=score;saveBest();}
+      getBoard().then(list=>{
+        if(state!=='dead')return;
+        const pos=posIn(list,score);
+        if(pos>=0){
+          $('erank').textContent=(pos+1)+'위';
+          $('escore').textContent=score.toLocaleString()+'점, 제 '+wave+' 파';
+          $('ename').value=lastName;$('entry').classList.remove('hidden');
+          setTimeout(()=>{try{$('ename').focus()}catch(e){}},50);
+        }else showOver(-1,list);
+      });
     }
   }
 }
@@ -836,6 +919,38 @@ function frame(now){
 }
 
 /* ---------- 흐름 ---------- */
+let deadShown=false,newBest=false,lastName='';
+try{lastName=localStorage.getItem('gungnight_name')||''}catch(e){}
+function showOver(hi,list){
+  $('res').textContent=score.toLocaleString()+'점, 제 '+wave+' 파, 자객 '+kills+'명 격살'+(shots?', 명중률 '+Math.round(Math.min(hits,shots)/shots*100)+'%':'');
+  $('best2').textContent=newBest?'새 최고 기록입니다':'';
+  renderTable($('rt2'),hi,list);$('mode2').textContent=modeText();$('over').classList.remove('hidden');
+}
+let saving=false;
+async function saveEntry(){
+  if($('entry').classList.contains('hidden')||saving)return;
+  saving=true;const btn=$('esave');btn.disabled=true;btn.textContent='새기는 중';
+  const name=($('ename').value||'').trim().slice(0,8)||'무명 궁사';
+  if(name!=='무명 궁사'){lastName=name;try{localStorage.setItem('gungnight_name',name)}catch(e){}}
+  const r=loadRank(),rec={name,score,wave,t:Date.now()};
+  let i=r.findIndex(x=>score>x.score);if(i<0)i=r.length;r.splice(i,0,rec);saveRank(r);
+  let list=null,hi=-1;
+  if(boardMode==='online'){
+    const id=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+    try{await postOnline(rec,id);list=await fetchOnline();hi=list.findIndex(x=>x.id===id);}catch(e){boardMode='local';list=null;}
+  }
+  if(!list){list=loadRank();hi=i<10?i:-1;}
+  try{$('ename').blur()}catch(e){}
+  btn.disabled=false;btn.textContent='기록하기';saving=false;
+  $('entry').classList.add('hidden');showOver(hi,list);vib(20);
+}
+$('esave').addEventListener('click',saveEntry);
+$('ename').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveEntry();}});
+$('showBoard').addEventListener('click',()=>{
+  renderTable($('rt1'),-1,null);$('mode1').textContent='';$('board').classList.remove('hidden');
+  getBoard().then(list=>{renderTable($('rt1'),-1,list);$('mode1').textContent=modeText();});
+});
+$('bclose').addEventListener('click',()=>$('board').classList.add('hidden'));
 function tryFS(){
   try{const el=document.documentElement;const p=el.requestFullscreen?el.requestFullscreen({navigationUI:'hide'}):null;
     if(p&&p.then)p.then(()=>{try{screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}).catch(()=>{});}catch(e){}
@@ -846,8 +961,8 @@ function nextWave(){wave++;spawnWave(wave);
 function startGame(){
   initAudio();if(!document.fullscreenElement)tryFS();musicVol=0.42;if(bgm.paused){bgm.currentTime=0;musicPlay();}
   wave=0;score=0;kills=0;shots=0;hits=0;arrows=[];parts=[];texts=[];pdead=false;pfall=0;slashT=-1;flash=0;
-  tscale=1;slowT=0;danger=0;cooldown=0;aimA=-0.18;power=0;aiming=false;
-  $('title').classList.add('hidden');$('over').classList.add('hidden');
+  tscale=1;slowT=0;danger=0;cooldown=0;aimA=-0.18;power=0;aiming=false;deadShown=false;newBest=false;
+  $('title').classList.add('hidden');$('over').classList.add('hidden');$('entry').classList.add('hidden');
   nextWave();
 }
 $('start').addEventListener('click',startGame);
